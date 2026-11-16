@@ -65,18 +65,20 @@ AI 自主渗透测试系统（Go 后端 + Next.js 前端）
 ## 安装
 
 > 依赖数据库 **PostgreSQL**；探索需配置 **LLM**（`ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`，也可在 UI 里配）。
+>
+> 克隆地址是 [echogong/ARTEX](https://github.com/echogong/ARTEX)。Go module 路径仍是 `github.com/Autumn-27/artex`，许可仍是 AGPL-3.0。
 
 ### 方式一：一键安装脚本（推荐）
 
 ```bash
-git clone https://github.com/Hinln/ARTEX.git
+git clone https://github.com/echogong/ARTEX.git
 cd ARTEX
 ./install.sh
 ```
 
 脚本会：检测 / 自动安装 Docker → 让你选 **① 全部 Docker** 或 **② 本地编译运行**：
 
-- **① 全部 Docker**：填一个 Postgres 密码（可回车随机）→ 自动写 `.env` → `docker compose up -d`。
+- **① 全部 Docker**：填一个 Postgres 密码（可回车随机）→ 自动写 `.env` → `docker compose up -d --build`（用本仓库源码构建 `artex` 镜像，只拉取 Postgres 镜像）。
 - **② 本地运行**：选数据库（连已有 / 用 Docker 起一个）→ 生成 `config.json` → `go` 编译内嵌单二进制 → 启动。
 
 装好后打开 **http://localhost:8787**（首次进入 `/setup` 设置管理员密码）。
@@ -84,10 +86,10 @@ cd ARTEX
 ### 方式二：Docker Compose（手动）
 
 ```bash
-git clone https://github.com/Hinln/ARTEX.git
+git clone https://github.com/echogong/ARTEX.git
 cd ARTEX
 cp .env.example .env          # 填 POSTGRES_PASSWORD、可选 ANTHROPIC_API_KEY
-docker compose up -d          # 拉取 autumn27/artex 镜像 + postgres
+docker compose up -d --build  # 从本仓库源码构建 artex，并拉取 postgres
 # → http://localhost:8787
 ```
 
@@ -98,19 +100,7 @@ docker compose up -d          # 拉取 autumn27/artex 镜像 + postgres
 `/message?sessionId=...` 接收 JSON-RPC 请求；配置时将 URL 填为 `/sse`，请求头按
 `Authorization=Bearer <token>` 填写。
 
-### 方式三：下载预编译二进制（Releases）
-
-到 [Releases](https://github.com/Hinln/ARTEX/releases) 下载对应平台的 zip，解压后得到 `artex` + `start.sh`（Windows 为 `start.bat`）+ `skills/` + `config.example.json`：
-
-```bash
-cp config.example.json config.json   # 填好 database 连接
-./start.sh                           # → http://localhost:8787
-```
-
-> 请用 `start.sh` / `start.bat` 启动，而不是直接跑 `./artex`。它是个守护脚本：程序退出后按退出码决定是否重新拉起，**页面上的[一键更新](#方式一页面一键更新推荐)靠它完成换装**。直接运行 `./artex` 时更新完就不会被拉起了。
-> 后台常驻：`nohup ./start.sh >artex.log 2>&1 &`。
-
-### 方式四：从源码编译单二进制
+### 方式三：从源码编译单二进制
 
 ```bash
 # 1) 前端静态导出
@@ -122,13 +112,15 @@ CGO_ENABLED=0 go build -tags embedui -o artex ./cmd/artex
 ./start.sh
 ```
 
-### 方式五：构建跨平台 Release 压缩包
+`start.sh` / `start.bat` 只在进程崩溃后重新拉起**当前**二进制，不下载、不安装新版本。后台常驻：`nohup ./start.sh >artex.log 2>&1 &`。
+
+### 方式四：构建跨平台压缩包
 
 `build.sh` 会先构建并嵌入前端，再使用 Go linker 去除调试信息，并将发布文件压缩为 zip。Release 模式默认生成 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 的 zip 包：
 
 ```bash
 ./build.sh --release
-# 产物：dist/artex-0.3.3-*.zip
+# 产物：dist/artex-<版本>-*.zip
 ```
 
 UPX 自解压二进制可能与部分 Linux 内核、虚拟化环境或安全策略不兼容，因此默认不启用。可用 `ARTEX_TARGETS` 自定义目标；确认目标运行环境兼容时，可显式传入 `--upx` 进一步缩小二进制：
@@ -138,81 +130,41 @@ ARTEX_TARGETS=linux/amd64,windows/amd64 ./build.sh --release
 ./build.sh --target linux/amd64 --upx
 ```
 
+解压后得到 `artex` + `start.sh`（Windows 为 `start.bat`）+ `skills/` + `config.example.json`。填好 `config.json` 后用 `./start.sh` 启动。这是本机构建的产物，程序不会从 GitHub Release 自行下载。
+
 ---
 
 ## 更新升级
 
-> 升级只换程序、不动数据：Postgres 数据卷 `pgdata`、`./data`（jwt.key / SQLite 等）、`./skills` 都会保留。**数据库迁移无需手动执行**——`artex` 每次启动会幂等重跑 `schema.sql`（含 `ADD COLUMN` / `CREATE INDEX IF NOT EXISTS`），即“重启即迁移”。升级前仍建议先备份 `./data` 与数据库。
+**在线更新已关闭。** 程序不会检查、下载或安装任何 GitHub 仓库上的新版本，系统配置页也没有检查或安装按钮。升级由维护者在本机手动完成。
 
-### 本仓库的私有 Release 更新源
+> 升级只换程序、不动数据：Postgres 数据卷 `pgdata`、`./data`（jwt.key / SQLite 等）、`./skills` 都会保留。**数据库迁移无需手动执行**——`artex` 每次启动会幂等重跑 `schema.sql`（含 `ADD COLUMN` / `CREATE INDEX IF NOT EXISTS`），即“重启即迁移”。升级前仍建议先备份 `./data` 与数据库。升级会重启进程，正在运行的任务会被中断。
 
-页面一键更新固定从 [Hinln/ARTEX Releases](https://github.com/Hinln/ARTEX/releases) 检查和下载版本。克隆或通过 Git 更新源码也使用 `Hinln/ARTEX`；原项目的 Go module 路径保持不变。
-
-这是私有仓库。请为运行 ARTEX 的后端进程设置 `ARTEX_UPDATE_GITHUB_TOKEN`，令牌只需本仓库的 **Contents: read** 权限。令牌由后端用于查询 Release 和下载附件，不发送给浏览器，也不要提交到 Git。
-
-```bash
-# 先在当前 shell 或服务环境中安全设置 ARTEX_UPDATE_GITHUB_TOKEN
-./start.sh
-```
-
-本地直接启动时，`start.sh` 不会自动读取 `.env`；必须将变量导出到进程环境。Docker Compose 部署则可在未纳入 Git 的 `.env` 中填写该变量，并重建 artex 容器；镜像需要包含本分支的更新代码，旧版镜像不会因此切换升级源。
-
-需要先在本仓库发布非 draft、非 prerelease 的正式 Release，并附上 `artex-<版本>-<os>-<arch>.zip` 和 `SHA256SUMS`，页面才能提供可安装更新。仓库里只有源码时还不能在线升级。现有 Release 工作流会在推送 `v*` tag 时为当前仓库生成这些附件。
-
-### 方式一：页面一键更新（推荐）
-
-在 **系统配置** 页（侧边栏「系统配置」→ `/system/settings`）的**版本与更新**卡片里，可以直接检查并安装新版本，无需登录服务器。
-
-点「更新」后：下载当前平台的发布包 → 比对 Release 的 `SHA256SUMS` → 用 `-h` 冒烟测试新二进制 → 暂存为 `artex.new` → 程序退出，由 `start.sh` / `start.bat` 重新拉起并完成换装。页面会自动等到新版本上线后刷新。
-
-- **失败不会留下坏程序**：校验或冒烟不通过就丢弃暂存件、继续跑当前版本；换装后的新版若连续 3 次启动失败，会自动回滚到 `artex.old`（失败的那个留作 `artex.failed` 供排查）。
-- **随时可回退**：上一版本保留为 `artex.old`，卡片上有「回滚到上一版本」。注意数据库结构不会回退。
-- **更新会中断正在运行的任务**——更新即重启，请在空闲时进行。
-- **开发构建不给更新**：版本号是 `dev` 或 `git describe` 带后缀时禁用，避免正式版覆盖掉本地调试的二进制。
-- **Docker 下只换程序、不换镜像**：镜像里的 playwright / nmap 等工具链不会跟着升级，且 `docker compose up -d` 重建容器后会退回镜像自带的版本。要连镜像一起升级仍请用 `docker compose pull artex && docker compose up -d artex`。
-- 访问 GitHub 需要代理时，在同一页面配置**全局代理**即可，更新链路会走它。更新只从 GitHub 域名下载并强制 HTTPS。
-
-### 方式二：一键更新脚本
+### Docker Compose
 
 ```bash
 cd ARTEX
-./update.sh
+git pull
+docker compose build artex
+docker compose up -d artex    # 用新镜像重启 → 自动迁移 schema
+docker image prune -f         # 清理旧镜像（可选）
 ```
 
-脚本先可选 `git pull` 拉取最新代码，再让你选 **① Docker 更新** 或 **② 本地编译更新**（与 `install.sh` 对应）：
+`docker compose` 把本地镜像标成 `artex:local`，并且 `pull_policy: never`，不会去拉取远程 artex 镜像。Postgres 镜像仍按 `postgres:16-alpine` 使用。
 
-- **① Docker**：可指定目标镜像 tag（回车沿用 `.env` 的 `ARTEX_TAG`，缺省 `latest`）→ `docker compose pull` → `docker compose up -d`（换新镜像重启即自动迁移）。
-- **② 本地**：重建前端静态产物 → 重新编译 `./artex`（完成后重启进程生效）。
+`./update.sh` 选 **① Docker** 时做的是同一件事：可选 `git pull`，然后 `docker compose build artex` 与 `docker compose up -d artex`。
 
-### 方式三：Docker Compose（手动）
-
-```bash
-cd ARTEX
-git pull                       # 更新 compose / 脚本（可选）
-# 指定版本：在 .env 设 ARTEX_TAG=v0.2.0；不设则用 latest
-docker compose pull artex
-docker compose up -d artex     # 换新镜像重启 → 自动迁移 schema
-docker image prune -f          # 清理旧镜像（可选）
-```
-
-### 方式四：预编译二进制（Releases）
-
-到 [Releases](https://github.com/Hinln/ARTEX/releases) 下载新版本 zip，停掉旧进程后覆盖 `artex` 与 `skills/`（保留你的 `config.json` 与 `data/`），重启即可：
-
-```bash
-cp -r <解压目录>/skills ./ && cp <解压目录>/artex ./
-./start.sh
-```
-
-### 方式五：从源码编译
+### 从源码编译
 
 ```bash
 git pull
 cd web && npm ci && npm run build:static && cd ..
 cp -r web/out server/webui/dist
 CGO_ENABLED=0 go build -tags embedui -o artex ./cmd/artex
-# 重启 ./start.sh
+# 停掉旧进程后重新运行 ./start.sh
 ```
+
+`./update.sh` 选 **② 本地** 时会走同样的重新编译，编完后需要自行重启进程。
 
 ---
 

@@ -1,17 +1,32 @@
 # syntax=docker/dockerfile:1
 #
-# 运行镜像（不在镜像里编译）：只装常用工具，放入**预编译好的 Linux 单二进制**。
-# 二进制由 CI 的 binaries job 交叉编译（纯 Go、无 QEMU），按目标架构放在
-# 构建上下文的 dist/<TARGETARCH>/artex。这样多架构构建时 arm64 只需模拟 apt 层，
-# 不再模拟 Next/Go 编译，速度快得多。
+# 两个最终阶段，运行层相同（工具链 + start.sh + skills）：
 #
-# 本地手动构建镜像时，先自行准备二进制：
-#   cd web && npm run build:static && cd ..
-#   cp -r web/out server/webui/dist
-#   CGO_ENABLED=0 GOARCH=amd64 go build -tags embedui -o dist/amd64/artex ./cmd/artex
-#   docker build -t artex:local .
-FROM python:3.12-slim-bookworm
-ARG TARGETARCH
+#   local（默认）— 在镜像内从本仓库源码编译前端和 Go 二进制。
+#     docker compose 使用这一阶段，不再拉取 autumn27/artex。
+#   prebuilt — 放入构建上下文里预先交叉编译好的 dist/<arch>/artex，
+#     供 .github/workflows/release.yml 使用（需 --target prebuilt）。
+#
+# 在线自更新已关闭。start.sh 只做进程守护，不下载、不换装。
+FROM node:22-bookworm AS web
+WORKDIR /src/web
+COPY web/package.json web/package-lock.json ./
+ENV HUSKY=0
+RUN npm ci
+COPY web/ ./
+ENV NEXT_EXPORT=1
+RUN npm run build:static
+
+FROM golang:1.26-bookworm AS gobuild
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+COPY --from=web /src/web/out server/webui/dist
+ENV CGO_ENABLED=0
+RUN go build -tags embedui -trimpath -ldflags "-s -w" -o /out/artex ./cmd/artex
+
+FROM python:3.12-slim-bookworm AS runtime
 # 常用工具：ripgrep / curl / vim，加一批 recon 常备件（按需增删）。
 # Node 从 NodeSource 装 20.x：bookworm 自带的 apt nodejs 是 18，Playwright 要求 >=20。
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -30,16 +45,23 @@ RUN npm install -g @playwright/mcp@latest @playwright/cli@latest playwright@late
     && playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-# 预编译好的对应架构二进制（dist/amd64/artex 或 dist/arm64/artex）
-COPY dist/${TARGETARCH}/artex /app/artex
-# 守护启动脚本：进程退出后按退出码决定是否重新拉起，页面一键更新靠它完成换装。
-# 它同时负责把 SIGTERM 转发给 artex —— docker stop 只把信号发给 PID 1，
-# 不转发的话 artex 收不到、做不了优雅关闭，10 秒后被 SIGKILL 硬杀。
 COPY start.sh /app/start.sh
-RUN chmod +x /app/artex /app/start.sh
 COPY skills/ /app/skills/
 # data/（SQLite + jwt.key）持久化点
 VOLUME ["/app/data"]
 EXPOSE 8787 8788
+
+# 发布流水线：使用 CI 已交叉编译好的二进制，避免在镜像里再编一次。
+FROM runtime AS prebuilt
+ARG TARGETARCH
+COPY dist/${TARGETARCH}/artex /app/artex
+RUN chmod +x /app/artex /app/start.sh
+ENTRYPOINT ["/app/start.sh"]
+CMD ["-addr", ":8787", "-proxy", ":8788"]
+
+# 本地 / docker compose：从本仓库源码构建。放在最后，作为 docker build 的默认阶段。
+FROM runtime AS local
+COPY --from=gobuild /out/artex /app/artex
+RUN chmod +x /app/artex /app/start.sh
 ENTRYPOINT ["/app/start.sh"]
 CMD ["-addr", ":8787", "-proxy", ":8788"]

@@ -10,11 +10,11 @@ rem
 rem 它只做一件事：把 artex.exe 跑起来，进程退出后按退出码决定要不要再拉起。
 rem
 rem   0      用户正常停止     -> 退出循环
-rem   75     程序请求重启     -> 立刻重跑（页面点了"一键更新"或"回滚"）
+rem   75     进程以 75 退出   -> 立刻重跑（当前版本不会为了更新主动退出）
 rem   其他   崩溃             -> 退避后重跑（1->2->4…最多 60 秒）
 rem
-rem 下载、SHA256 校验、换装都不在这里，全部由 artex 自己在启动时完成
-rem （selfupdate 包）。脚本保持傻瓜化，详见 start.sh 顶部的说明。
+rem 在线更新已关闭。本脚本不下载、不换装。升级请 git pull 后重新编译。
+rem 详见 start.sh 顶部的说明。
 
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
@@ -39,8 +39,8 @@ if "!code!"=="0" (
 )
 
 if "!code!"=="%RESTART_CODE%" (
-	rem 更新/回滚已就绪：重跑后 artex 会在启动时完成换装。
-	echo [artex] 请求重启（应用新版本）…
+	rem 当前版本不会为了安装更新而退出 75。若进程仍以此码退出，只是重新拉起现有二进制。
+	echo [artex] 进程请求重启…
 	set /a delay=1
 	goto loop
 )

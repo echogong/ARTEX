@@ -120,6 +120,8 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
+          # 打 tag 时仍可把预编译镜像推到这里。docker-compose.yml 不再拉取该镜像，
+          # 本地运行使用 Dockerfile 的 local 阶段，从本仓库源码构建。
           images: autumn27/artex
           tags: |
             type=ref,event=tag
@@ -127,6 +129,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          target: prebuilt
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
