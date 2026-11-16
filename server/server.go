@@ -663,8 +663,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/logs/history", s.getLogsHistory)
 	mux.HandleFunc("GET /api/logs/stream", s.streamLogs)
 
-	// 页面一键更新。走的是默认的 JWT 鉴权（auth.go 只放行 /api/auth/* 和
-	// /api/health），所以这几个改动程序自身的接口天然需要登录。
+	// 在线更新已在编译期关闭。这些路由只返回当前版本和
+	// "online update disabled; upgrade manually"，不访问 GitHub，也不换装。
+	// 仍走默认 JWT 鉴权（auth.go 只放行 /api/auth/* 和 /api/health）。
 	mux.HandleFunc("GET /api/update/check", s.updateCheck)
 	mux.HandleFunc("POST /api/update/apply", s.updateApply)
 	mux.HandleFunc("POST /api/update/rollback", s.updateRollback)

@@ -15,13 +15,16 @@ services:
     restart: unless-stopped
 
   artex:
-    image: autumn27/artex:${ARTEX_TAG:-latest}
+    build:
+      context: .
+      target: local
+    image: artex:local
+    pull_policy: never
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       ARTEX_PG_DSN: postgres://${POSTGRES_USER:-artex}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-artex}?sslmode=disable
-      ARTEX_UPDATE_GITHUB_TOKEN: ${ARTEX_UPDATE_GITHUB_TOKEN:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ARTEX_LLM_PROVIDER: ${ARTEX_LLM_PROVIDER:-}
